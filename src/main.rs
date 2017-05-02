@@ -1,8 +1,10 @@
 #[macro_use]
 extern crate glium;
+extern crate regex;
+#[macro_use]
+extern crate lazy_static;
 
-use std::io::prelude::*;
-use std::fs::File;
+mod shader;
 
 use glium::DisplayBuild;
 use glium::Surface;
@@ -17,6 +19,12 @@ implement_vertex!(Vertex, position);
 
 
 fn main() {
+    let mut r = shader::Resolver::new();
+    //TODO glob
+    r.push("toy.frag");
+    r.push("shader.vert");
+    r.push("shader.frag");
+
     let display = glium::glutin::WindowBuilder::new().build_glium().unwrap();
 
     // Fullscreen quad
@@ -33,13 +41,8 @@ fn main() {
     let vertex_buffer = glium::VertexBuffer::new(&display, &shape).unwrap();
     let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
 
-    let mut vert_shader_file = File::open("shader.vert").unwrap();
-    let mut vertex_shader_src = String::new();
-    vert_shader_file.read_to_string(&mut vertex_shader_src).unwrap();
-
-    let mut fragment_shader_file = File::open("shader.frag").unwrap();
-    let mut fragment_shader_src = String::new();
-    fragment_shader_file.read_to_string(&mut fragment_shader_src).unwrap();
+    let vertex_shader_src= r.resolve("shader.vert").unwrap();
+    let fragment_shader_src = r.resolve("shader.frag").unwrap();
 
     println!("{:?} {:?}", vertex_shader_src, fragment_shader_src);
 

@@ -5,3 +5,5 @@ authors = ["Tim Peters <tim@wirelab.nl>"]
 
 [dependencies]
 glium = "*"
+lazy_static = "0.2"
+regex = "0.2"
