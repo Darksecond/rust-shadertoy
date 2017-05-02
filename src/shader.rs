@@ -23,6 +23,11 @@ impl Source {
             path: PathBuf::from(path),
         }
     }
+
+    //TODO reload
+    //pub fn reload(&mut self) {
+    //    self.source = read_file(&self.path);
+    //}
 }
 
 #[derive(Debug)]
@@ -42,6 +47,7 @@ impl<'a> Resolver<'a> {
     }
 
     //TODO push_glob
+    //TODO reload
 
     pub fn resolve(&self, path: &str) -> Option<String> {
         match self.sources.get(path) {
@@ -68,6 +74,7 @@ impl<'a> Resolver<'a> {
 }
 
 /// Helper function which reads the contents of a file as a string.
+//TODO This should return a Result<String, ...>
 fn read_file<P: AsRef<Path>>(p: P) -> String {
     let mut file = File::open(p).unwrap();
     let mut s = String::new();

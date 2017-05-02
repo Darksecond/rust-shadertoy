@@ -44,8 +44,6 @@ fn main() {
     let vertex_shader_src= r.resolve("shader.vert").unwrap();
     let fragment_shader_src = r.resolve("shader.frag").unwrap();
 
-    println!("{:?} {:?}", vertex_shader_src, fragment_shader_src);
-
     let program = glium::Program::from_source(&display, &vertex_shader_src, &fragment_shader_src, None).unwrap();
 
     let start_time =  Instant::now();
