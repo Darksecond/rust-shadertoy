@@ -1,8 +1,10 @@
 precision highp float;
 
-uniform vec3 iResolution;
+uniform vec2 iResolution;
 uniform float iGlobalTime;
 uniform vec2 iMouse;
+
+uniform sampler2D iChannel0;
 
 out vec4 fColor;
 
