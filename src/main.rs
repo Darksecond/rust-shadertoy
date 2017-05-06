@@ -9,6 +9,8 @@ mod shader;
 use glium::DisplayBuild;
 use glium::Surface;
 use glium::Texture2d;
+use glium::uniforms::Uniforms;
+use glium::Program;
 
 use std::time::Instant;
 
@@ -65,6 +67,7 @@ impl glium::uniforms::Uniforms for State {
 
 struct Pass<'a> {
     channels: Vec<&'a Texture2d>,
+    program: &'a Program,
 }
 
 impl<'a> Pass<'a> {
@@ -82,25 +85,29 @@ impl<'b> glium::uniforms::Uniforms for Pass<'b> {
     }
 }
 
-struct CombinedState<'a, 'b> {
-    state: &'a State,
-    pass: &'b Pass<'b>,
+struct CombinedUniforms2<'a, 'b, A: 'a + Uniforms, B: 'b + Uniforms> {
+    first: &'a A,
+    second: &'b B,
 }
-
-impl<'a, 'b> CombinedState<'a, 'b> {
-    fn combine(state: &'a State, pass: &'b Pass<'b>) -> CombinedState<'a, 'b> {
-        CombinedState {
-            state: state,
-            pass: pass,
-        }
-    }
-}
-
-impl<'c, 'd> glium::uniforms::Uniforms for CombinedState<'c, 'd> {
+impl<'c, 'd, C: 'c + Uniforms, D: 'd + Uniforms> glium::uniforms::Uniforms for CombinedUniforms2<'c, 'd, C, D> {
     fn visit_values<'a, F: FnMut(&str, glium::uniforms::UniformValue<'a>)>(&'a self, mut output: F) {
-        self.state.visit_values(|name, value| { output(name, value) });
-        self.pass.visit_values(|name, value| { output(name, value) });
+        self.first.visit_values(|name, value| { output(name, value) });
+        self.second.visit_values(|name, value| { output(name, value) });
     }
+}
+
+fn combine_uniforms<'a, 'b, A: 'a + Uniforms, B: 'b + Uniforms>(first: &'a A, second: &'b B) -> CombinedUniforms2<'a, 'b, A, B> {
+    CombinedUniforms2 {
+        first: first,
+        second: second,
+    }
+}
+
+enum Command<'a, T: 'a + Surface> {
+    Draw(&'a Pass<'a>),
+    DrawFrameBuffer(&'a Pass<'a>, &'a std::cell::RefCell<T>),
+    Clear(f32, f32, f32, f32),
+    ClearFrameBuffer(f32, f32, f32, f32, &'a std::cell::RefCell<T>),
 }
 
 fn main() {
@@ -109,6 +116,8 @@ fn main() {
     r.push("toy.frag");
     r.push("shader.vert");
     r.push("shader.frag");
+    r.push("shader2.vert");
+    r.push("shader2.frag");
 
     let display = glium::glutin::WindowBuilder::new().build_glium().unwrap();
 
@@ -119,10 +128,7 @@ fn main() {
                                                                 800,
                                                                 500
                                                                 ).unwrap();
-    let mut tex_buffer = glium::framebuffer::SimpleFrameBuffer::new(&display, &texture1).unwrap();
-    let pass = Pass {
-        channels: vec![&texture1],
-    };
+    let tex_buffer = std::cell::RefCell::new(glium::framebuffer::SimpleFrameBuffer::new(&display, &texture1).unwrap());
 
     // Fullscreen quad
     let shape = vec![
@@ -138,26 +144,53 @@ fn main() {
     let vertex_buffer = glium::VertexBuffer::new(&display, &shape).unwrap();
     let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
 
-    let vertex_shader_src= r.resolve("shader.vert").unwrap();
-    let fragment_shader_src = r.resolve("shader.frag").unwrap();
+    let program1 = glium::Program::from_source(&display, &r.resolve("shader.vert").unwrap(), &r.resolve("shader.frag").unwrap(), None).unwrap();
+    let program2 = glium::Program::from_source(&display, &r.resolve("shader2.vert").unwrap(), &r.resolve("shader2.frag").unwrap(), None).unwrap();
 
-    let program = glium::Program::from_source(&display, &vertex_shader_src, &fragment_shader_src, None).unwrap();
+    let pass1 = Pass {
+        channels: vec![],
+        program: &program1,
+    };
+    let pass2 = Pass {
+        channels: vec![&texture1],
+        program: &program2,
+    };
+
+    let mut commands = vec![
+        Command::Clear(0.0, 0.0, 0.0, 1.0),
+        Command::ClearFrameBuffer(0., 0., 0., 1., &tex_buffer),
+        Command::DrawFrameBuffer(&pass1, &tex_buffer),
+        Command::Draw(&pass2),
+    ];
 
     let mut state = State::new(display.get_framebuffer_dimensions());
 
     loop {
-        tex_buffer.clear_color(1.0, 1.0, 0.0, 1.0);
         let mut target = display.draw();
-        target.clear_color(0.0, 0.0, 1.0, 1.0);
-        target.draw(&vertex_buffer, &indices, &program, &CombinedState::combine(&state, &pass), &Default::default()).unwrap();
+        for command in &mut commands {
+            match command {
+                &mut Command::Draw(pass) => {
+                    target.draw(&vertex_buffer, &indices, &pass.program, &combine_uniforms(&state, pass), &Default::default()).unwrap();
+                },
+                &mut Command::DrawFrameBuffer(pass, ref frame_buffer_cell) => {
+                    let mut frame_buffer = frame_buffer_cell.borrow_mut();
+                    frame_buffer.draw(&vertex_buffer, &indices, &pass.program, &combine_uniforms(&state, pass), &Default::default()).unwrap();
+                },
+                &mut Command::Clear(r,g,b,a) => {
+                    target.clear_color(r,g,b,a);
+                },
+                &mut Command::ClearFrameBuffer(r,g,b,a, ref frame_buffer_cell) => {
+                    let mut frame_buffer = frame_buffer_cell.borrow_mut();
+                    frame_buffer.clear_color(r,g,b,a);
+                },
+            }
+        }
         target.finish().unwrap();
 
         for ev in display.poll_events() {
             match ev {
                 glium::glutin::Event::Closed => return,
-                glium::glutin::Event::MouseMoved(_,_) => state.handle_event(ev),
-                glium::glutin::Event::Resized(_,_) => state.handle_event(ev),
-                _=> ()
+                _=> state.handle_event(ev),
             }
         }
     }
