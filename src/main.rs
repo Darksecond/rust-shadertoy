@@ -3,6 +3,7 @@ extern crate glium;
 extern crate regex;
 #[macro_use]
 extern crate lazy_static;
+extern crate rust_rocket;
 
 mod shader;
 
@@ -14,12 +15,78 @@ use glium::Program;
 
 use std::time::Instant;
 
+use rust_rocket::{Rocket, Event};
+
 #[derive(Clone, Copy)]
 struct Vertex {
     position: [f32; 3],
 }
 implement_vertex!(Vertex, position);
 
+
+struct Sync {
+    start_time: Instant,
+    rocket: Rocket,
+    paused: bool,
+    row: u32,
+}
+
+impl Sync {
+    pub fn new() -> Sync {
+        Sync {
+            start_time: Instant::now(),
+            rocket: Rocket::new().unwrap(),
+            paused: true,
+            row: 0,
+        }
+    }
+
+    pub fn track(&mut self, name: &str) {
+        self.rocket.get_track_mut(name);
+    }
+
+    pub fn update(&mut self) {
+        while let Some(event) = self.rocket.poll_events() {
+            match event {
+                Event::Pause(flag) => {
+                    self.paused = flag;
+                },
+                Event::SetRow(row) => self.row = row,
+                _ => (),
+            }
+        }
+
+        let elapsed = self.start_time.elapsed();
+        let time = elapsed.as_secs() as f32 + elapsed.subsec_nanos() as f32/ 1000000000.0;
+        let bpm = 150.0;
+        let rpb = 8.;
+        let row_rate = (bpm / 60.) * rpb;
+        let row_count = time * row_rate;
+
+        if(row_count > 1.) {
+            self.start_time = Instant::now();
+            if(!self.paused) {
+                self.row = self.row + (row_count.floor() as u32);
+                self.rocket.set_row(self.row);
+            }
+        }
+    }
+
+    pub fn val(&self, name: &str) -> f32 {
+        self.rocket.get_track(name).get_value(self.row as f32)
+    }
+}
+
+impl glium::uniforms::Uniforms for Sync {
+    fn visit_values<'a, F: FnMut(&str, glium::uniforms::UniformValue<'a>)>(&'a self, mut output: F) {
+        use glium::uniforms::AsUniformValue;
+
+        //TODO iGlobalTime
+        output("color_r", glium::uniforms::UniformValue::Float(self.val("color:r")));
+        output("color_g", glium::uniforms::UniformValue::Float(self.val("color:g")));
+        output("color_b", glium::uniforms::UniformValue::Float(self.val("color:b")));
+    }
+}
 
 #[derive(Debug)]
 struct State {
@@ -165,16 +232,27 @@ fn main() {
 
     let mut state = State::new(display.get_framebuffer_dimensions());
 
+    let mut sync = Sync::new();
+    sync.track("color:r");
+    sync.track("color:g");
+    sync.track("color:b");
+
     loop {
+        sync.update();
+
         let mut target = display.draw();
         for command in &mut commands {
             match command {
                 &mut Command::Draw(pass) => {
-                    target.draw(&vertex_buffer, &indices, &pass.program, &combine_uniforms(&state, pass), &Default::default()).unwrap();
+                    target.draw(&vertex_buffer, &indices, &pass.program,
+                                &combine_uniforms(&combine_uniforms(&state, pass), &sync),
+                                &Default::default()).unwrap();
                 },
                 &mut Command::DrawFrameBuffer(pass, ref frame_buffer_cell) => {
                     let mut frame_buffer = frame_buffer_cell.borrow_mut();
-                    frame_buffer.draw(&vertex_buffer, &indices, &pass.program, &combine_uniforms(&state, pass), &Default::default()).unwrap();
+                    frame_buffer.draw(&vertex_buffer, &indices, &pass.program,
+                                      &combine_uniforms(&combine_uniforms(&state, pass), &sync),
+                                      &Default::default()).unwrap();
                 },
                 &mut Command::Clear(r,g,b,a) => {
                     target.clear_color(r,g,b,a);
