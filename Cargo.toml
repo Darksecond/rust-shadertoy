@@ -1,9 +1,10 @@
 [package]
 name = "shadertoy"
 version = "0.1.0"
-authors = ["Tim Peters <tim@wirelab.nl>"]
+authors = ["Tim Peters <mail@darksecond.nl>"]
 
 [dependencies]
 glium = "*"
 lazy_static = "0.2"
 regex = "0.2"
+rust-rocket = "*"
