@@ -29,6 +29,7 @@ struct Sync {
     rocket: Rocket,
     paused: bool,
     row: u32,
+    tracks: Vec<String>,
 }
 
 impl Sync {
@@ -38,10 +39,12 @@ impl Sync {
             rocket: Rocket::new().unwrap(),
             paused: true,
             row: 0,
+            tracks: vec![],
         }
     }
 
     pub fn track(&mut self, name: &str) {
+        self.tracks.push(name.to_owned());
         self.rocket.get_track_mut(name);
     }
 
@@ -73,7 +76,11 @@ impl Sync {
     }
 
     pub fn val(&self, name: &str) -> f32 {
-        self.rocket.get_track(name).get_value(self.row as f32)
+        if let Some(track) = self.rocket.get_track(name) {
+            track.get_value(self.row as f32)
+        } else {
+            0.0
+        }
     }
 }
 
@@ -82,9 +89,9 @@ impl glium::uniforms::Uniforms for Sync {
         use glium::uniforms::AsUniformValue;
 
         //TODO iGlobalTime
-        output("color_r", glium::uniforms::UniformValue::Float(self.val("color:r")));
-        output("color_g", glium::uniforms::UniformValue::Float(self.val("color:g")));
-        output("color_b", glium::uniforms::UniformValue::Float(self.val("color:b")));
+        for ref name in &self.tracks {
+            output(name.replace(":", "_").as_str(), glium::uniforms::UniformValue::Float(self.val(name.as_str())));
+        }
     }
 }
 
